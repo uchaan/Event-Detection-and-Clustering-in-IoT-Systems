@@ -1,0 +1,79 @@
+import os
+import argparse
+import warnings
+
+warnings.filterwarnings("ignore")
+
+import numpy as np
+from tqdm import tqdm
+
+
+from phase2.clustering.clustering import *
+from phase2.clustering.find_cluster import *
+from phase2.feature.extract import *
+from phase3.generate_rule import *
+from phase3.classify import *
+from utils.dataset import *
+from visualization.visualize import *
+from evaluation.performance import *
+
+numbers_true = {"ArabicDigits": 10, "CharacterTrajectories": 20, "JapaneseVowels": 9, "LIBRAS": 15}
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", type=str, default="ArabicDigits")
+
+    args = vars(parser.parse_args())
+
+    dataset_name = args["dataset"]
+    dataset_path = f"../data/phase2/processed/{dataset_name}/segments/*.csv"
+
+    dataframes, labels = load_event_dataset(dataset_path)
+
+    modified_dataframes = []
+
+    for df in tqdm(dataframes):
+        if dataset_name == "CharacterTrajectories":
+            modified_df = df.drop(columns=df.columns[:1])
+        else:
+            modified_df = df.drop(columns=df.columns[:2])
+        modified_dataframes.append(modified_df)
+
+    features = extract_t2f(dataframes_to_numpy(modified_dataframes), batch_size=1000)
+    print(features)
+
+    features_dataframe = features
+
+    feature_X = features_dataframe.values  # Extracted Features of each segment
+    feature_X[np.isnan(feature_X)] = 0  # handling NaN values as 0
+
+    X = dataframes_to_numpy(modified_dataframes)
+    num_instances, num_timestamps, num_variables = X.shape
+
+    labels = np.array(labels)
+    cluster_index_list = []
+
+    for label in np.unique(labels):
+        index = np.where(labels == label)[0]
+        cluster_index_list.append(index)
+
+    max_iterations = 15
+
+    avg_features = []
+    med_features = []
+
+    for i, index_list in enumerate(tqdm(cluster_index_list)):
+        cluster = feature_X[index_list]
+        avg_feature = np.mean(cluster, axis=0)
+        med_feature = np.median(cluster, axis=0)
+        avg_features.append(avg_feature)
+        med_features.append(med_feature)
+
+    classifications_avg = classify_feature(feature_X, avg_features)
+    classifications_med = classify_feature(feature_X, med_features)
+
+    accuracy_avg = calculate_accuracy(labels, classifications_avg)
+    accuracy_med = calculate_accuracy(labels, classifications_med)
+
+    print("accuracy_avg", accuracy_avg)
+    print("accuracy_med", accuracy_med)
